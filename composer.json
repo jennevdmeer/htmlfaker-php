@@ -1,0 +1,14 @@
+{
+    "name": "jennevdmeer/htmlfaker-php",
+    "description": "A simple HTML faker for PHP",
+    "type": "library",
+    "require-dev": {
+        "php": ">=8.0",
+        "fakerphp/faker": "^1.23"
+    },
+    "autoload": {
+        "psr-4": {
+            "Impulze\\HtmlFaker\\": "src/"
+        }
+    }
+}
