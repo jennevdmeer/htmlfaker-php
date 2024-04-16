@@ -8,26 +8,43 @@ use RuntimeException;
 class HtmlFaker
 {
     public static array $defaultOptions = [
-        'generator' => null,
-
-        'paragraphs' => 6,
-        'paragraphsVariation' => 0.4,
-        'paragraphLength' => 6,
-        'paragraphLengthVariation' => 0.7,
+        'faker' => null,
 
         'headingLevel' => 1,
         'headingLevelMax' => 6,
         'headingProbability' => 0.2,
 
-        'blockElementProbability' => 0.4,
+        'leadParagraphs' => 0,
+        'leadParagraphsVariation' => 0,
+        'leadParagraphLength' => 6,
+        'leadParagraphLengthVariation' => 0.2,
+
+        'paragraphs' => 8,
+        'paragraphsVariation' => 0.4,
+        'paragraphLength' => 12,
+        'paragraphLengthVariation' => 0.6,
+
+        'inlineElementProbability' => 0.2,
+        'inlineElementProbabilities' => [
+            'a' => 0.5,
+            'abbr' => 0.1,
+            'code' => 0.1,
+            'em' => 1.0,
+            'img' => 0.0,
+            'mark' => 0.1,
+            'strong' => 1.0,
+        ],
+
+        'blockElementProbability' => 0.3,
         'blockElementProbabilities' => [
-            'ul' => 1.0,
-            'ol' => 0.75,
             'blockquote' => 0.4,
-            'table' => 0.1,
             'figure' => 0.5,
-            'img' => 0.25,
+            'img' => 0.0,
+            'ol' => 0.75,
+            'ul' => 1.0,
+            'hr' => 0.25,
             'pre' => 0.1,
+            'table' => 0.1,
         ],
 
         'listLength' => 6,
@@ -38,26 +55,26 @@ class HtmlFaker
         'tableRowLength' => 12,
         'tableRowLengthVariation' => 0.7,
 
-        'imageRatios' => [ 9/16, 3/4, 1 ],
+        'imageRatios' => [ 8/16 ],
         'imageSizeMin' => 480,
         'imageSizeMax' => 1920,
         'imageSizeVariation' => 0.3,
 
-        'inlineElementProbability' => 0.2,
-        'inlineElementProbabilities' => [
-            'a' => 0.5,
-            'strong' => 1.0,
-            'em' => 1.0,
-            'mark' => 0.1,
-            'abbr' => 0.1,
-            'code' => 0.1,
-        ],
-
         'elementClasses' => [
+            'p.lead' => 'lead',
             'figure' => 'figure',
             'table' => 'table',
             'blockquote' => 'blockquote',
         ],
+
+        // Types from constant below.
+        'typeClasses' => [
+            'int' => 'int',
+            'currency' => 'currency',
+            'percentage' => 'percentage',
+            'string' => 'string',
+            'text' => 'text',
+        ]
     ];
 
     private const TABLE_COLUMN_VALUE_TYPES = [
@@ -75,7 +92,7 @@ class HtmlFaker
 
     public function generate(array $options = []): string
     {
-        $options = array_merge(self::$defaultOptions, $options);
+        $options = array_replace_recursive(self::$defaultOptions, $options);
 
         $html = '';
 
@@ -87,6 +104,20 @@ class HtmlFaker
         // Store original heading, so we don't end up with a lower heading level than our input.
         $options['originalHeadingLevel'] = $options['headingLevel'];
 
+        // Generate lead paragraphs.
+        if ($options['leadParagraphs'] > 0) {
+            $html .= $this->paragraphs(array_replace_recursive($options, [
+                'headingProbability' => 0,
+                'paragraphs' => $options['leadParagraphs'],
+                'paragraphsVariation' => $options['leadParagraphsVariation'],
+                'paragraphLength' => $options['leadParagraphLength'],
+                'paragraphLengthVariation' => $options['leadParagraphLengthVariation'],
+                'elementClasses' => [
+                    'p' => $this->elementClasses($options, 'p.lead'),
+                ],
+            ]));
+        }
+
         $html .= $this->paragraphs($options);
 
         return $html;
@@ -96,11 +127,14 @@ class HtmlFaker
     {
         $html = '';
 
-        $paragraphCount = $this->randomVariation((int)$options['paragraphs'], $options['paragraphsVariation']);
+        $last = null;
+
+        $paragraphCount = max(1, $this->randomVariation((int)$options['paragraphs'], $options['paragraphsVariation']));
         for ($i = 0; $i < $paragraphCount; $i++) {
             // Generate heading before next block element/paragraph.
             if ($options['headingProbability'] && $this->randomChance($options['headingProbability'])) {
                 $html .= $this->heading($options);
+                $last = 'heading';
 
                 // 40% to go deeper, 60% to go back up per heading chance.
                 if ($this->randomChance(.4)) {
@@ -115,10 +149,12 @@ class HtmlFaker
             }
 
             // Random chance to generate a block element otherwise just generate a normal paragraph.
-            if ($this->randomChance($options['blockElementProbability'])) {
+            if ($last && $this->randomChance($options['blockElementProbability'])) {
                 $html .= $this->blockElement($options);
+                $last = 'block';
             } else {
                 $html .= $this->paragraph($options);
+                $last = 'paragraph';
             }
         }
 
@@ -127,7 +163,7 @@ class HtmlFaker
 
     public function heading(array $options = []): string
     {
-        return sprintf('<h%1$d class="%2$s">%3$s</h%1$d>'.PHP_EOL, $options['headingLevel'], $options['elementClasses']['h'.$options['headingLevel']] ?? '', $this->faker($options)->sentence());
+        return sprintf('<h%1$d class="%2$s">%3$s</h%1$d>'.PHP_EOL, $options['headingLevel'], $this->elementClasses($options, 'h'.$options['headingLevel']), $this->faker($options)->sentence());
     }
 
     public function paragraph(array $options = []): string
@@ -139,7 +175,7 @@ class HtmlFaker
             $html .= $this->sentence($options).' ';
         }
 
-        return '<p class="'.($options['elementClasses']['p'] ?? '').'">'.trim($html).'</p>'.PHP_EOL;
+        return '<p class="'.$this->elementClasses($options, 'p').'">'.trim($html).'</p>'.PHP_EOL;
     }
 
     public function sentence(array $options = []): string
@@ -157,10 +193,11 @@ class HtmlFaker
 
         return match ($element) {
             'a' => $this->link($options),
+            'img' => $this->image($options),
             'strong', 'b', 'em', 'i', 'mark', 'abbr', 'code' => sprintf(
-                '<%1$s class="%2$s">%3$s</%1$s>',
+                '<%1$s class="%2$s">%3$s</%1$s>'.PHP_EOL,
                 $element,
-                $options['elementClasses'][$element] ?? '',
+                $this->elementClasses($options, $element),
                 $this->faker($options)->sentence(),
             ),
             default => throw new RuntimeException('Unknown inline element: '.$element),
@@ -169,8 +206,16 @@ class HtmlFaker
 
     public function blockElement(array $options): string
     {
-        $element = $this->randomWeighted($options['blockElementProbabilities']);
+        // Prevent same block element from being generated twice in a row.
+        static $tracker = null;
 
+        do {
+            $element = $this->randomWeighted($options['blockElementProbabilities']);
+        } while ($element === $tracker);
+
+        $tracker = $element;
+
+        // Return block element.
         return match($element) {
             'ul' => $this->unorderedList($options),
             'ol' => $this->orderedList($options),
@@ -178,6 +223,7 @@ class HtmlFaker
             'table' => $this->table($options),
             'img' => $this->image($options),
             'figure' => $this->figure($options),
+            'hr' => $this->hr($options),
             'pre' => $this->pre($options),
             default => throw new RuntimeException('Unknown block element: '.$element),
         };
@@ -194,12 +240,12 @@ class HtmlFaker
 
     public function unorderedList(array $options): string
     {
-        return '<ul class="'.($options['elementClasses']['ul'] ?? '').'">'.PHP_EOL.$this->listItems($options).'</ul>'.PHP_EOL;
+        return '<ul class="'.$this->elementClasses($options, 'ul').'">'.PHP_EOL.$this->listItems($options).'</ul>'.PHP_EOL;
     }
 
     public function orderedList(array $options): string
     {
-        return '<ol class="'.($options['elementClasses']['ol'] ?? '').'">'.PHP_EOL.$this->listItems($options).'</ol>'.PHP_EOL;
+        return '<ol class="'.$this->elementClasses($options, 'ol').'">'.PHP_EOL.$this->listItems($options).'</ol>'.PHP_EOL;
     }
 
     private function listItems(array $options): string
@@ -208,7 +254,7 @@ class HtmlFaker
 
         $items = [];
         for ($i = 0, $max = max(1, $listLength); $i < $max; $i++) {
-            $items[] = '<li class="'.($options['elementClasses']['li'] ?? '').'">'.$this->sentence($options).'</li>'.PHP_EOL;
+            $items[] = '<li class="'.$this->elementClasses($options, 'li').'">'.$this->sentence($options).'</li>'.PHP_EOL;
         }
 
         return implode($items);
@@ -220,7 +266,7 @@ class HtmlFaker
         $sentences = $this->faker($options)->sentences(random_int(1, 3));
         $sentences = '<p>'.implode('</p><p>', $sentences).'</p>';
 
-        return '<blockquote class="'.($options['elementClasses']['blockquote'] ?? '').'">'.$sentences.'</blockquote>';
+        return '<blockquote class="'.$this->elementClasses($options, 'blockquote').'">'.$sentences.'</blockquote>';
     }
 
     public function table(array $options): string
@@ -234,14 +280,14 @@ class HtmlFaker
             $columnTypes[] = self::TABLE_COLUMN_VALUE_TYPES[$randomKey];
         }
 
-        return '<table class="'.($options['elementClasses']['table'] ?? '').'">'.PHP_EOL.$this->generateTableHeader($options, $columnTypes).$this->generateTableRows($options, $columnTypes).'</table>'.PHP_EOL;
+        return '<table class="'.$this->elementClasses($options, 'table').'">'.PHP_EOL.$this->generateTableHeader($options, $columnTypes).$this->generateTableRows($options, $columnTypes).'</table>'.PHP_EOL;
     }
 
     private function generateTableHeader(array $options, array $columnTypes): string
     {
         $columns = '';
         foreach ($columnTypes as $type) {
-            $columns .= '<th class="'.$type.'">'.$this->faker($options)->word().'</th>'.PHP_EOL;
+            $columns .= '<th class="'.$this->typeClasses($options, $type).'">'.$this->faker($options)->word().'</th>'.PHP_EOL;
         }
 
         return '<thead>'.PHP_EOL.'<tr>'.PHP_EOL.$columns.'</tr>'.PHP_EOL.'</thead>'.PHP_EOL;
@@ -272,7 +318,7 @@ class HtmlFaker
                 default => throw new RuntimeException('Unknown table column type: '.$type),
             };
 
-            $columns .= '<td>'.$value.'</td>'.PHP_EOL;
+            $columns .= '<td class="'.$this->typeClasses($options, $type).'">'.$value.'</td>'.PHP_EOL;
         }
 
         return '<tr>'.PHP_EOL.$columns.'</tr>'.PHP_EOL;
@@ -280,7 +326,7 @@ class HtmlFaker
 
     public function pre(array $options): string
     {
-        return '<pre class="'.($options['elementClasses']['pre'] ?? '').'">'.implode(PHP_EOL, $this->faker($options)->sentences()).'</pre>';
+        return '<pre class="'.$this->elementClasses($options, 'pre').'">'.implode(PHP_EOL, $this->faker($options)->sentences()).'</pre>';
     }
 
     public function figure(array $options): string
@@ -289,14 +335,14 @@ class HtmlFaker
         if ($this->randomChance()) {
             $caption = sprintf(
                 '<figcaption class="%s">%s</figcaption>',
-                $options['elementClasses']['figcaption'] ?? '',
+                $this->elementClasses($options, 'figcaption'),
                 $this->faker($options)->sentence(),
             );
         }
 
         return sprintf(
             "<figure class=\"%s\">\n%s%s</figure>\n",
-            $options['elementClasses']['figure'] ?? '',
+            $this->elementClasses($options, 'figure'),
             $this->image($options),
             $caption
         );
@@ -306,7 +352,7 @@ class HtmlFaker
     {
         $ratio = $options['imageRatios'][array_rand($options['imageRatios'])] ?? 9 / 16;
 
-        $imageSize = $this->randomFloatBetween($options['imageSizeMin'] ?? 640, $options['imageSizeMax'] ?? 1920);
+        $imageSize = $this->randomFloatBetween($options['imageSizeMin'] ?? 640, $options['imageSizeMax'] ?? 1280);
 
         $width = $this->randomVariation((int)$imageSize, $options['imageSizeVariation']);
         $height = $width * $ratio;
@@ -316,8 +362,13 @@ class HtmlFaker
             $width,
             $height,
             $this->faker($options)->sentence(),
-            $options['elementClasses']['img'] ?? ''
+            $this->elementClasses($options, 'img'),
         );
+    }
+
+    public function hr(array $options): string
+    {
+        return '<hr class="'.$this->elementClasses($options, 'hr').'">'.PHP_EOL;
     }
 
     private function faker(array $options): Generator
@@ -325,6 +376,16 @@ class HtmlFaker
         return $options['faker']
             ?? $this->faker
             ?? throw new RuntimeException('No faker instance provided in constructor or config.');
+    }
+
+    private function elementClasses(array $options, string $element): string
+    {
+        return $options['elementClasses'][$element] ?? '';
+    }
+
+    private function typeClasses(array $options, string $type): string
+    {
+        return $options['typeClasses'][$type] ?? '';
     }
 
     private function randomFloat(): float
@@ -339,6 +400,14 @@ class HtmlFaker
 
     private function randomChance(float $probability = 0.5): bool
     {
+        if ($probability <= 0) {
+            return false;
+        }
+
+        if ($probability >= 1) {
+            return true;
+        }
+
         return $this->randomFloat() < $probability;
     }
 
