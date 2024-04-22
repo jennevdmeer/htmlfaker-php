@@ -90,14 +90,23 @@ class HtmlFaker
     ) {
     }
 
-    public function generate(array $options = []): string
+    public function options(array $options = [], bool $mergeWithDefaultOptions = true): array
     {
-        $options = array_replace_recursive(self::$defaultOptions, $options);
+        if (!$mergeWithDefaultOptions) {
+            return $options;
+        }
+
+        return array_replace_recursive(self::$defaultOptions, $options);
+    }
+
+    public function generate(array $options = [], bool $mergeWithDefaultOptions = true): string
+    {
+        $options = $this->options($options, $mergeWithDefaultOptions);
 
         $html = '';
 
         if ($options['headingProbability'] && $options['headingLevel'] === 1) {
-            $html .= $this->heading($options);
+            $html .= $this->heading($options, false);
             $options['headingLevel']++;
         }
 
@@ -115,7 +124,7 @@ class HtmlFaker
                 'elementClasses' => [
                     'p' => $this->elementClasses($options, 'p.lead'),
                 ],
-            ]));
+            ]), false);
         }
 
         $html .= $this->paragraphs($options);
@@ -123,8 +132,12 @@ class HtmlFaker
         return $html;
     }
 
-    public function paragraphs(array $options): string
+    public function paragraphs(array $options = [], bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
+        $options['originalHeadingLevel'] ??= $options['headingLevel'];
+
         $html = '';
 
         $last = null;
@@ -133,7 +146,7 @@ class HtmlFaker
         for ($i = 0; $i < $paragraphCount; $i++) {
             // Generate heading before next block element/paragraph.
             if ($options['headingProbability'] && $this->randomChance($options['headingProbability'])) {
-                $html .= $this->heading($options);
+                $html .= $this->heading($options, false);
                 $last = 'heading';
 
                 // 40% to go deeper, 60% to go back up per heading chance.
@@ -150,10 +163,10 @@ class HtmlFaker
 
             // Random chance to generate a block element otherwise just generate a normal paragraph.
             if ($last && $this->randomChance($options['blockElementProbability'])) {
-                $html .= $this->blockElement($options);
+                $html .= $this->blockElement($options, false);
                 $last = 'block';
             } else {
-                $html .= $this->paragraph($options);
+                $html .= $this->paragraph($options, false);
                 $last = 'paragraph';
             }
         }
@@ -161,39 +174,47 @@ class HtmlFaker
         return $html;
     }
 
-    public function heading(array $options = []): string
+    public function heading(array $options = [], bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         return sprintf('<h%1$d class="%2$s">%3$s</h%1$d>'.PHP_EOL, $options['headingLevel'], $this->elementClasses($options, 'h'.$options['headingLevel']), $this->faker($options)->sentence());
     }
 
-    public function paragraph(array $options = []): string
+    public function paragraph(array $options = [], bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         $paragraphLength = max(1, $this->randomVariation((int)$options['paragraphLength'], $options['paragraphLengthVariation']));
 
         $html = '';
         for ($i = 0; $i < $paragraphLength; $i++) {
-            $html .= $this->sentence($options).' ';
+            $html .= $this->sentence($options, false).' ';
         }
 
         return '<p class="'.$this->elementClasses($options, 'p').'">'.trim($html).'</p>'.PHP_EOL;
     }
 
-    public function sentence(array $options = []): string
+    public function sentence(array $options = [], bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         if ($this->randomChance($options['inlineElementProbability'])) {
-            return $this->inlineElement($options);
+            return $this->inlineElement($options, false);
         }
 
         return $this->faker($options)->sentence();
     }
 
-    public function inlineElement(array $options): string
+    public function inlineElement(array $options, bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         $element = $this->randomWeighted($options['inlineElementProbabilities']);
 
         return match ($element) {
-            'a' => $this->link($options),
-            'img' => $this->image($options),
+            'a' => $this->link($options, false),
+            'img' => $this->image($options, false),
             'strong', 'b', 'em', 'i', 'mark', 'abbr', 'code' => sprintf(
                 '<%1$s class="%2$s">%3$s</%1$s>'.PHP_EOL,
                 $element,
@@ -204,8 +225,10 @@ class HtmlFaker
         };
     }
 
-    public function blockElement(array $options): string
+    public function blockElement(array $options, bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         // Prevent same block element from being generated twice in a row.
         static $tracker = null;
 
@@ -217,20 +240,22 @@ class HtmlFaker
 
         // Return block element.
         return match($element) {
-            'ul' => $this->unorderedList($options),
-            'ol' => $this->orderedList($options),
-            'blockquote' => $this->blockquote($options),
-            'table' => $this->table($options),
-            'img' => $this->image($options),
-            'figure' => $this->figure($options),
-            'hr' => $this->hr($options),
-            'pre' => $this->pre($options),
+            'ul' => $this->unorderedList($options, false),
+            'ol' => $this->orderedList($options, false),
+            'blockquote' => $this->blockquote($options, false),
+            'table' => $this->table($options, false),
+            'img' => $this->image($options, false),
+            'figure' => $this->figure($options, false),
+            'hr' => $this->hr($options, false),
+            'pre' => $this->pre($options, false),
             default => throw new RuntimeException('Unknown block element: '.$element),
         };
     }
 
-    public function link(array $options): string
+    public function link(array $options, bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         return sprintf(
             '<a href="#%s">%s</a>',
             $this->faker($options)->url(),
@@ -238,30 +263,36 @@ class HtmlFaker
         );
     }
 
-    public function unorderedList(array $options): string
+    public function unorderedList(array $options, bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         return '<ul class="'.$this->elementClasses($options, 'ul').'">'.PHP_EOL.$this->listItems($options).'</ul>'.PHP_EOL;
     }
 
-    public function orderedList(array $options): string
+    public function orderedList(array $options, bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         return '<ol class="'.$this->elementClasses($options, 'ol').'">'.PHP_EOL.$this->listItems($options).'</ol>'.PHP_EOL;
     }
 
-    private function listItems(array $options): string
+    private function listItems(array $options, bool $mergeWithDefaultOptions = true): string
     {
         $listLength = max(1, $this->randomVariation((int)$options['listLength'], $options['listLengthVariation']));
 
         $items = [];
         for ($i = 0, $max = max(1, $listLength); $i < $max; $i++) {
-            $items[] = '<li class="'.$this->elementClasses($options, 'li').'">'.$this->sentence($options).'</li>'.PHP_EOL;
+            $items[] = '<li class="'.$this->elementClasses($options, 'li').'">'.$this->sentence($options, false).'</li>'.PHP_EOL;
         }
 
         return implode($items);
     }
 
-    public function blockquote(array $options): string
+    public function blockquote(array $options, bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         /** @var string[] $sentences */
         $sentences = $this->faker($options)->sentences(random_int(1, 3));
         $sentences = '<p>'.implode('</p><p>', $sentences).'</p>';
@@ -269,8 +300,10 @@ class HtmlFaker
         return '<blockquote class="'.$this->elementClasses($options, 'blockquote').'">'.$sentences.'</blockquote>';
     }
 
-    public function table(array $options): string
+    public function table(array $options, bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         $columnCount = max(1, $this->randomVariation((int)$options['tableColumnLength'], $options['tableColumnLengthVariation']));
 
         $columnTypes = [];
@@ -324,13 +357,17 @@ class HtmlFaker
         return '<tr>'.PHP_EOL.$columns.'</tr>'.PHP_EOL;
     }
 
-    public function pre(array $options): string
+    public function pre(array $options, bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         return '<pre class="'.$this->elementClasses($options, 'pre').'">'.implode(PHP_EOL, $this->faker($options)->sentences()).'</pre>';
     }
 
-    public function figure(array $options): string
+    public function figure(array $options, bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         $caption = '';
         if ($this->randomChance()) {
             $caption = sprintf(
@@ -343,13 +380,15 @@ class HtmlFaker
         return sprintf(
             "<figure class=\"%s\">\n%s%s</figure>\n",
             $this->elementClasses($options, 'figure'),
-            $this->image($options),
+            $this->image($options, false),
             $caption
         );
     }
 
-    public function image(array $options): string
+    public function image(array $options, bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         $ratio = $options['imageRatios'][array_rand($options['imageRatios'])] ?? 9 / 16;
 
         $imageSize = $this->randomFloatBetween($options['imageSizeMin'] ?? 640, $options['imageSizeMax'] ?? 1280);
@@ -366,8 +405,10 @@ class HtmlFaker
         );
     }
 
-    public function hr(array $options): string
+    public function hr(array $options, bool $mergeWithDefaultOptions = true): string
     {
+        $options = $this->options($options, $mergeWithDefaultOptions);
+
         return '<hr class="'.$this->elementClasses($options, 'hr').'">'.PHP_EOL;
     }
 
